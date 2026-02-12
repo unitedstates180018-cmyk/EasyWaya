@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>EasyWaya Login</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #111B21;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      color: white;
+    }
+
+    .box {
+      width: 90%;
+      max-width: 400px;
+      background: #202C33;
+      padding: 25px;
+      border-radius: 10px;
+    }
+
+    h2 {
+      text-align: center;
+      color: #25D366;
+    }
+
+    input {
+      width: 100%;
+      padding: 12px;
+      margin-top: 12px;
+      border-radius: 6px;
+      border: none;
+      background: #2A3942;
+      color: white;
+      outline: none;
+    }
+
+    button {
+      width: 100%;
+      padding: 12px;
+      margin-top: 15px;
+      border: none;
+      border-radius: 6px;
+      background: #25D366;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    .switch {
+      text-align: center;
+      margin-top: 15px;
+      cursor: pointer;
+      color: #aaa;
+    }
+  </style>
+</head>
+<body>
+
+<div class="box">
+  <h2 id="formTitle">Login</h2>
+
+  <!-- ✅ NEW Name Input -->
+  <input type="text" id="name" placeholder="Enter Full Name" style="display:none;">
+
+  <input type="email" id="email" placeholder="Enter Email">
+  <input type="password" id="password" placeholder="Enter Password">
+
+  <button id="mainBtn" onclick="handleAuth()">Continue</button>
+  <div class="switch" id="switchText" onclick="toggleMode()">Switch to Signup</div>
+</div>
+
+<script type="module">
+
+import { initializeApp } 
+from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+
+import { 
+  getAuth, 
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  onAuthStateChanged
+} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+
+import { 
+  getFirestore,
+  doc,
+  setDoc,
+  getDoc,
+  serverTimestamp
+} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCVC05ibpNKzg1ERe0tNIFh8B0V4uIcOQI",
+  authDomain: "easywaya-af4aa.firebaseapp.com",
+  projectId: "easywaya-af4aa",
+  storageBucket: "easywaya-af4aa.firebasestorage.app",
+  messagingSenderId: "970416705354",
+  appId: "1:970416705354:web:226152c8e42e1f35b77bb3"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+let isLogin = true;
+
+
+// Auto redirect if already logged in
+onAuthStateChanged(auth, async (user) => {
+
+  if (user) {
+
+    const userRef = doc(db, "users", user.uid);
+    const snap = await getDoc(userRef);
+
+    if (!snap.exists()) {
+      await setDoc(userRef, {
+        email: user.email,
+        online: false,
+        typing: false,
+        lastSeen: serverTimestamp()
+      });
+    }
+
+    window.location.href = "dashboard.html";
+  }
+
+});
+
+
+// Toggle Login / Signup Mode
+window.toggleMode = function() {
+
+  const title = document.getElementById("formTitle");
+  const switchText = document.getElementById("switchText");
+  const mainBtn = document.getElementById("mainBtn");
+  const nameInput = document.getElementById("name");
+
+  isLogin = !isLogin;
+
+  if (isLogin) {
+    title.innerText = "Login";
+    mainBtn.innerText = "Continue";
+    switchText.innerText = "Switch to Signup";
+    nameInput.style.display = "none";
+  } else {
+    title.innerText = "Signup";
+    mainBtn.innerText = "Create Account";
+    switchText.innerText = "Switch to Login";
+    nameInput.style.display = "block";
+  }
+};
+
+
+// Handle Login / Signup
+window.handleAuth = async function() {
+
+  const name = document.getElementById("name").value.trim();
+  const email = document.getElementById("email").value.trim();
+  const password = document.getElementById("password").value.trim();
+
+  if (!email || !password) {
+    alert("Please fill all fields");
+    return;
+  }
+
+  try {
+
+    if (isLogin) {
+
+      await signInWithEmailAndPassword(auth, email, password);
+
+    } else {
+
+      if (!name) {
+        alert("Please enter your full name");
+        return;
+      }
+
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+
+      await setDoc(doc(db, "users", userCredential.user.uid), {
+        name: name,
+        email: email,
+        online: false,
+        typing: false,
+        lastSeen: serverTimestamp()
+      });
+
+      window.location.href = "dashboard.html";
+    }
+
+  } catch (error) {
+    alert(error.message);
+  }
+
+};
+
+</script>
+
+</body>
+</html>

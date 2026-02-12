@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>EasyWaya</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #111B21;
+      color: white;
+    }
+
+    .header {
+      background: #202C33;
+      padding: 15px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .header h2 {
+      margin: 0;
+      color: #25D366;
+    }
+
+    .logout {
+      background: #ff3b30;
+      padding: 6px 12px;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+
+    .search-box {
+      padding: 10px;
+      background: #202C33;
+      display: flex;
+    }
+
+    .search-box input {
+      flex: 1;
+      padding: 8px;
+      border-radius: 20px;
+      border: none;
+      outline: none;
+      background: #2A3942;
+      color: white;
+    }
+
+    .search-box button {
+      margin-left: 10px;
+      padding: 8px 15px;
+      border: none;
+      border-radius: 20px;
+      background: #25D366;
+      cursor: pointer;
+    }
+
+    .chat {
+      display: flex;
+      align-items: center;
+      padding: 12px;
+      border-bottom: 1px solid #222;
+      cursor: pointer;
+      position: relative;
+    }
+
+    .chat:hover {
+      background: #202C33;
+    }
+
+    .avatar {
+      width: 45px;
+      height: 45px;
+      background: #25D366;
+      border-radius: 50%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-weight: bold;
+      margin-right: 12px;
+      color: black;
+    }
+
+    .chat-info {
+      flex: 1;
+    }
+
+    .chat-info h4 {
+      margin: 0;
+      font-size: 15px;
+    }
+
+    .chat-info p {
+      margin: 2px 0 0;
+      font-size: 13px;
+      color: #aaa;
+    }
+
+    .status {
+      font-size: 12px;
+      color: #25D366;
+    }
+
+    .time {
+      font-size: 12px;
+      color: #aaa;
+    }
+
+    .chat-menu {
+      cursor: pointer;
+      padding: 5px;
+      color: #aaa;
+      font-size: 18px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <h2>EasyWaya</h2>
+  <div class="logout" onclick="logout()">Logout</div>
+</div>
+
+<div class="search-box">
+  <input type="text" id="searchEmail" placeholder="Search by email">
+  <button onclick="searchUser()">Search</button>
+</div>
+
+<div id="chatList"></div>
+
+<script type="module">
+
+import { initializeApp } 
+from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+
+import { 
+  getAuth, 
+  onAuthStateChanged,
+  signOut
+} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+
+import { 
+  getFirestore,
+  collection,
+  getDocs,
+  doc,
+  updateDoc,
+  serverTimestamp,
+  where
+} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCVC05ibpNKzg1ERe0tNIFh8B0V4uIcOQI",
+  authDomain: "easywaya-af4aa.firebaseapp.com",
+  projectId: "easywaya-af4aa",
+  storageBucket: "easywaya-af4aa.firebasestorage.app",
+  messagingSenderId: "970416705354",
+  appId: "1:970416705354:web:226152c8e42e1f35b77bb3"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+let currentUser;
+
+onAuthStateChanged(auth, async (user) => {
+
+  if (!user) {
+    window.location.href = "index.html";
+    return;
+  }
+
+  currentUser = user;
+
+  await updateDoc(doc(db, "users", user.uid), {
+    online: true
+  });
+
+  loadUsers();
+});
+
+window.searchUser = async function () {
+
+  const email = document.getElementById("searchEmail").value.trim();
+
+  if (!email) {
+    alert("Enter email to search");
+    return;
+  }
+
+  const q = query(
+    collection(db, "users"),
+    where("email", "==", email)
+  );
+
+  const snapshot = await getDocs(q);
+
+  if (snapshot.empty) {
+    alert("User not found");
+    return;
+  }
+
+  snapshot.forEach((docSnap) => {
+
+    if (docSnap.id === currentUser.uid) {
+      alert("You cannot chat with yourself");
+      return;
+    }
+
+    window.location.href = "chat.html?uid=" + docSnap.id;
+  });
+};
+
+async function loadUsers() {
+
+  const chatList = document.getElementById("chatList");
+  chatList.innerHTML = "";
+
+  const snapshot = await getDocs(collection(db, "users"));
+
+  snapshot.forEach((docSnap) => {
+
+    if (docSnap.id === currentUser.uid) return;
+
+    const otherUid = docSnap.id;
+    const data = docSnap.data();
+    const chatId = [currentUser.uid, otherUid].sort().join("_");
+
+    const displayName = 
+      data.name && data.name.trim() !== "" 
+        ? data.name 
+        : data.email;
+
+    const firstLetter = displayName.charAt(0).toUpperCase();
+
+    const div = document.createElement("div");
+    div.classList.add("chat");
+    div.id = "chat-" + chatId;
+
+    div.onclick = () => {
+      window.location.href = "chat.html?uid=" + otherUid;
+    };
+
+    div.innerHTML = `
+      <div class="avatar">${firstLetter}</div>
+      <div class="chat-info">
+        <h4>${displayName}</h4>
+        <p class="status">
+          ${data.online ? "🟢 Online" : "Offline"}
+        </p>
+      </div>
+      <div class="chat-menu" onclick="openChatMenu(event,'${chatId}')">⋮</div>
+    `;
+
+    chatList.appendChild(div);
+  });
+}
+
+window.openChatMenu = function (event, chatId) {
+  event.stopPropagation();
+
+  const choice = prompt("Type:\n1 = Clear Chat\n2 = Delete Chat");
+
+  if (choice === "1") clearChat(chatId);
+  if (choice === "2") deleteChat(chatId);
+};
+
+async function clearChat(chatId) {
+
+  const confirmClear = confirm("Clear all messages?");
+  if (!confirmClear) return;
+
+  const snapshot = await getDocs(
+    collection(db, "chats", chatId, "messages")
+  );
+
+  snapshot.forEach(async (docSnap) => {
+    await updateDoc(
+      doc(db, "chats", chatId, "messages", docSnap.id),
+      { deleted: true, text: "" }
+    );
+  });
+
+  alert("Chat cleared");
+}
+
+function deleteChat(chatId) {
+
+  const confirmDelete = confirm("Delete this chat from screen?");
+  if (!confirmDelete) return;
+
+  const chatDiv = document.getElementById("chat-" + chatId);
+  if (chatDiv) chatDiv.remove();
+
+  alert("Chat deleted from your screen");
+}
+
+window.logout = async function () {
+
+  if (currentUser) {
+    await updateDoc(doc(db, "users", currentUser.uid), {
+      online: false,
+      lastSeen: serverTimestamp()
+    });
+  }
+
+  signOut(auth).then(() => {
+    window.location.href = "index.html";
+  });
+};
+
+</script>
+
+</body>
+</html>

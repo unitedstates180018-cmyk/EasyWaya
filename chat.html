@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>EasyWaya Chat</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #111B21;
+      color: white;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+
+    .header {
+      background: #202C33;
+      padding: 15px;
+      display: flex;
+      align-items: center;
+    }
+
+    .header h3 {
+      margin: 0;
+      margin-left: 10px;
+    }
+
+    .chat-box {
+      flex: 1;
+      padding: 10px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .message {
+      max-width: 70%;
+      padding: 8px 12px;
+      margin: 5px 0;
+      border-radius: 8px;
+      font-size: 14px;
+      position: relative;
+      word-wrap: break-word;
+    }
+
+    .sent {
+      background: #25D366;
+      color: black;
+      align-self: flex-end;
+    }
+
+    .received {
+      background: #202C33;
+      align-self: flex-start;
+    }
+
+    .msg-time {
+      font-size: 10px;
+      opacity: 0.7;
+      margin-top: 4px;
+      text-align: right;
+    }
+
+    .tick {
+      font-size: 11px;
+      margin-left: 4px;
+    }
+
+    .tick.seen {
+      color: #34B7F1;
+    }
+
+    .input-area {
+      display: flex;
+      padding: 10px;
+      background: #202C33;
+    }
+
+    .input-area input {
+      flex: 1;
+      padding: 8px;
+      border-radius: 20px;
+      border: none;
+      outline: none;
+      background: #2A3942;
+      color: white;
+    }
+
+    .input-area button {
+      margin-left: 10px;
+      padding: 8px 15px;
+      border: none;
+      border-radius: 20px;
+      background: #25D366;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <button onclick="goBack()">⬅</button>
+  <div style="margin-left:10px;">
+    <h3 id="chatUser" style="margin:0; cursor:pointer;" onclick="showEmail()">Loading...</h3>
+    <p id="chatStatus" style="font-size:12px; margin:0; color:#aaa;"></p>
+  </div>
+</div>
+
+<div class="chat-box" id="chatBox"></div>
+
+<p id="emptyChat" style="text-align:center; opacity:0.5; display:none;">
+  No messages yet
+</p>
+
+<div class="input-area">
+  <input type="text" id="messageInput" placeholder="Type a message">
+  <button onclick="sendMessage()">Send</button>
+</div>
+
+<script type="module">
+
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import {
+  getFirestore,
+  doc,
+  getDoc,
+  setDoc,
+  collection,
+  addDoc,
+  query,
+  orderBy,
+  onSnapshot,
+  serverTimestamp,
+  updateDoc
+} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCVC05ibpNKzg1ERe0tNIFh8B0V4uIcOQI",
+  authDomain: "easywaya-af4aa.firebaseapp.com",
+  projectId: "easywaya-af4aa",
+  storageBucket: "easywaya-af4aa.firebasestorage.app",
+  messagingSenderId: "970416705354",
+  appId: "1:970416705354:web:226152c8e42e1f35b77bb3"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+const urlParams = new URLSearchParams(window.location.search);
+const otherUid = urlParams.get("uid");
+
+let currentUser;
+let chatId;
+let otherUserEmail = "";
+
+onAuthStateChanged(auth, async (user) => {
+
+  if (!user) {
+    window.location.href = "index.html";
+    return;
+  }
+
+  currentUser = user;
+  chatId = [user.uid, otherUid].sort().join("_");
+
+  await setDoc(doc(db, "users", user.uid), {
+    online: true
+  }, { merge: true });
+
+  loadUserName();
+  loadMessages();
+  listenTypingStatus();
+  listenOnlineStatus();
+});
+
+window.addEventListener("beforeunload", async () => {
+
+  if (!currentUser) return;
+
+  await setDoc(doc(db, "users", currentUser.uid), {
+    online: false,
+    lastSeen: serverTimestamp()
+  }, { merge: true });
+});
+
+async function loadUserName() {
+  const docSnap = await getDoc(doc(db, "users", otherUid));
+
+  if (docSnap.exists()) {
+    const data = docSnap.data();
+    document.getElementById("chatUser").innerText =
+      data.name && data.name.trim() !== "" ? data.name : data.email;
+    otherUserEmail = data.email;
+  }
+}
+
+function listenOnlineStatus() {
+  onSnapshot(doc(db, "users", otherUid), (docSnap) => {
+
+    if (!docSnap.exists()) return;
+
+    const data = docSnap.data();
+    const statusEl = document.getElementById("chatStatus");
+
+    if (data.typing) {
+      statusEl.innerText = "Typing...";
+      return;
+    }
+
+    if (data.online) {
+      statusEl.innerText = "Online";
+    } else if (data.lastSeen?.toDate) {
+      const time = data.lastSeen.toDate().toLocaleString();
+      statusEl.innerText = "Last seen " + time;
+    } else {
+      statusEl.innerText = "";
+    }
+  });
+}
+
+function loadMessages() {
+  const chatBox = document.getElementById("chatBox");
+
+  const q = query(
+    collection(db, "chats", chatId, "messages"),
+    orderBy("time")
+  );
+
+  onSnapshot(q, (snapshot) => {
+
+    chatBox.innerHTML = "";
+
+    if (snapshot.empty) {
+      document.getElementById("emptyChat").style.display = "block";
+    } else {
+      document.getElementById("emptyChat").style.display = "none";
+    }
+
+    snapshot.forEach((docSnap) => {
+
+      const msg = docSnap.data();
+      const div = document.createElement("div");
+
+      div.classList.add("message");
+      div.classList.add(
+        msg.sender === currentUser.uid ? "sent" : "received"
+      );
+
+      let timeText = "";
+
+      if (msg.time?.toDate) {
+        const date = msg.time.toDate();
+        timeText = date.toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit"
+        });
+      }
+
+      if (msg.sender !== currentUser.uid && !msg.seen) {
+        updateDoc(doc(db, "chats", chatId, "messages", docSnap.id), {
+          seen: true
+        });
+      }
+
+      let tick = "";
+      if (msg.sender === currentUser.uid) {
+        tick = msg.seen
+          ? '<span class="tick seen">✔✔</span>'
+          : '<span class="tick">✔</span>';
+      }
+
+      let messageText = msg.deleted
+        ? "🚫 This message was deleted"
+        : msg.text;
+
+      div.innerHTML = `
+        ${messageText}
+        <div class="msg-time">
+          ${timeText} ${tick}
+        </div>
+      `;
+
+      if (msg.sender === currentUser.uid && !msg.deleted) {
+        div.addEventListener("dblclick", async () => {
+          const confirmDelete = confirm("Delete for everyone?");
+          if (confirmDelete) {
+            await updateDoc(
+              doc(db, "chats", chatId, "messages", docSnap.id),
+              { deleted: true, text: "" }
+            );
+          }
+        });
+      }
+
+      chatBox.appendChild(div);
+    });
+
+    chatBox.scrollTop = chatBox.scrollHeight;
+  });
+}
+
+window.sendMessage = async function () {
+
+  const input = document.getElementById("messageInput");
+  const text = input.value.trim();
+
+  if (!text) return;
+
+  try {
+
+    await addDoc(collection(db, "chats", chatId, "messages"), {
+      text: text,
+      sender: currentUser.uid,
+      time: serverTimestamp(),
+      seen: false,
+      deleted: false
+    });
+
+    await setDoc(doc(db, "chats", chatId), {
+      participants: [currentUser.uid, otherUid],
+      lastMessage: text,
+      lastTime: serverTimestamp()
+    }, { merge: true });
+
+    input.value = "";
+
+  } catch (error) {
+    alert("Message failed. Try again.");
+  }
+};
+
+function listenTypingStatus() {
+  const input = document.getElementById("messageInput");
+
+  input.addEventListener("input", async () => {
+    await setDoc(doc(db, "users", currentUser.uid), {
+      typing: input.value.length > 0
+    }, { merge: true });
+  });
+}
+
+window.goBack = function () {
+  window.location.href = "dashboard.html";
+};
+
+/* ✅ NEW ADDED FUNCTION */
+window.showEmail = function () {
+  if (otherUserEmail) {
+    alert("User Email: " + otherUserEmail);
+  }
+};
+
+</script>
+</body>
+</html>
